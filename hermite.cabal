@@ -1,0 +1,53 @@
+name: hermite
+version: 0.0.1
+synopsis: A terminal for the controlfreak.
+license: BSD3
+license-file: LICENSE
+author: Per Odlund
+maintainer: per.odlund@gmail.com
+category: System
+build-type: Simple
+cabal-version: >=1.10
+homepage: http://github.com/dagle/hermite
+data-files: 
+extra-source-files: README.md,
+                    hermite.hs.example
+
+description:
+  Hermite is a lightweight system terminal for people that want full control
+  of their terminal editor without writing their own. It follows the spirit 
+  xmonad but use dyre to support dynamic reconfiguration. Everything can be
+  changed, from default colors, how urls are handled, to creating popups on
+  events. Hermite uses gnomes VTE internaly, like many other terminal, 
+  because of it's good bindings and standard support.
+
+library
+  default-language: Haskell2010
+  build-depends: base > 3 && < 5, xdg-basedir, filepath, utf8-string, vte
+  hs-source-dirs: src
+  pkgconfig-depends: gtk+-2.0
+  exposed-modules: System.Hermite,
+                   System.Hermite.Settings,
+                   System.Termutils.Color
+  other-modules:
+
+  c-sources: 
+
+  ghc-options: -Wall -funbox-strict-fields
+  ghc-prof-options: -auto-all
+
+
+executable hermite
+  default-language: Haskell2010
+  build-depends: base > 3 && < 5, dyre >= 0.8.6, gtk >= 0.12,
+                 xdg-basedir, filepath, vte
+  hs-source-dirs: src
+  main-is: Main.hs
+  pkgconfig-depends: gtk+-2.0
+  c-sources: 
+  ghc-options: -Wall -rtsopts -threaded
+  ghc-prof-options: -auto-all
+
+source-repository head
+  type: git
+  location: git://github.com/hermite/hermite.git
