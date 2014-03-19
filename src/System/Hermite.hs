@@ -14,7 +14,7 @@ module System.Hermite (
     -- (~/.config/hermite/hermite.hs). Typically this means just setting colors
     -- and edit bindings and adding 1 or 2 widgets, but you could change all
     -- of the behaviour of hermite if wanted. All you really are forced to do is
-    -- to spawn a vte and a window containing that vte.
+    -- to spawn a terminal and a window containing that vte.
     --
     -- * Config File
     --
@@ -25,13 +25,19 @@ module System.Hermite (
     HermiteConfig(..),
     defaultHermite,
     defaultHermiteConfig,
-    termiteMain
+    hermiteMain
     ) where
 
 import qualified Config.Dyre as Dyre
 import System.Environment.XDG.BaseDir ( getUserConfigFile )
 import System.FilePath ( (</>) )
 import Graphics.UI.Gtk
+import System.Hermite.Settings
+import System.Hermite.Keybind
+import System.Posix.Env
+import Graphics.UI.Gtk.Vte.Vte
+
+import Paths_hermite
 
 showError :: HermiteConfig -> String -> HermiteConfig
 showError cfg msg = cfg { errorMsg = Just msg }
@@ -39,13 +45,13 @@ showError cfg msg = cfg { errorMsg = Just msg }
 -- | The default parameters need to tell GHC to compile using
 -- -threaded so that the GTK event loops doesn't block all of the
 -- widgets
-defaultParams :: Dyre.Params TaffybarConfig
+defaultParams :: Dyre.Params HermiteConfig
 defaultParams = Dyre.defaultParams { Dyre.projectName = "hermite"
                                    , Dyre.realMain = realMain
                                    , Dyre.showError = showError
                                    , Dyre.ghcOpts = ["-threaded"]
                                    }
-defaultHermite :: TaffybarConfig -> IO ()
+defaultHermite :: HermiteConfig -> IO ()
 defaultHermite = Dyre.wrapMain defaultParams
 
 realMain :: HermiteConfig -> IO ()
@@ -55,56 +61,46 @@ realMain cfg = do
         Just err -> error ("Error: " ++ err)
 
 getDefaultConfigFile :: String -> IO FilePath
-getDefaultConfigFile name = do
+getDefaultConfigFile nam = do
   dataDir <- getDataDir
-  return (dataDir </> name)
+  return (dataDir </> nam)
 
-bindkeys bindings vte = on vte keyPressEvent $ keyPressed bindings
-
-match mod key (Keybinding (mod', key', _)) =
-    (mod == mod') && (key == key')
-
-keyPressed bindings = do
-    m <- eventModifier
-    key <- eventKeyName
-    let matched = filter (match m key) bindings
-    case matched of
-        [] -> return False
-        ((Keybinding (_, _, action)):xs) ->
-                    liftIO action
-                    return True
-
-
-hermiteMain :: HermiteConfig-> IO ()
-hermiteMain cfg = do
-  -- Override the default GTK theme path settings.  This causes the
-  -- terminal (by design) to ignore the real GTK theme and just use the
-  -- provided minimal theme to set, this does not effect the vte widget
-  -- only the gtk windows.
-  -- Users can override this default.
+gtkThemes :: IO ()
+gtkThemes = do
   defaultGtkConfig <- getDefaultConfigFile "hermite.rc"
   userGtkConfig <- getUserConfigFile "hermite" "hermite.rc"
   rcSetDefaultFiles [ defaultGtkConfig, userGtkConfig ]
 
+-- Standard hermiteMain for users only needing a standard terminal
+hermiteMain :: HermiteConfig -> IO ()
+hermiteMain cfg = do
+  gtkThemes
   _ <- initGUI
   window <- windowNew
-  vte <- terminalNew
-  _ <- on vte childExited mainQuit
+  terminal <- terminalNew
+  hermiteMainWithWindow window terminal cfg
 
-  xid <- windowXid(window)
-  setEnv "WINDOWID" (show xid) True
-  setEnv "TERM" (name cfg)True
+-- Version of hermite for users that needs to starts some extra widgets
+-- that interacts with the window or terminal.
+hermiteMainWithWindow :: Window -> Terminal -> HermiteConfig -> IO ()
+hermiteMainWithWindow window terminal cfg = do
+  _ <- on terminal childExited mainQuit
+
+  --xid <- windowXid(window)
+  --setEnv "WINDOWID" (show xid) True
+  setEnv "TERM" (name cfg) True
   setEnv "VTE_VERSION" "3405" True
 
   -- keys are always bound and does not need to be in the eventlist
-  let events' = (bindkeys (keybinding cfg)) : events cfg
-  _ <- sequence  map (\event -> event vte window) events'
+  _ <- bindkeys (keybindings cfg) terminal
+  _ <- sequence $ map (\event -> event terminal window) (events cfg)
 
-  -- setup events
-  -- setup keybindings
-  terminalForkCommand vte Nothing Nothing Nothing Nothing False False False
-  containerAdd window vte
-  -- lets do this before we start parsing, so no zombies get left behind
+  loadSettings (settings cfg) terminal
+  loadTheme (theme $ settings cfg) terminal
+
+  _ <- terminalForkCommand terminal Nothing Nothing Nothing Nothing False False False
+  containerAdd window terminal
+
   uncurry (widgetSetSizeRequest window) $ size cfg
   widgetShowAll window
 
@@ -115,16 +111,19 @@ data HermiteConfig = HermiteConfig {
     , size :: (Int, Int) -- Width, Height
     --, pos :: (Int, Int) -- maybe a good thing to have?
     , keybindings :: [Keybinding]
-    , events :: (WidgetClass w) => [Terminal -> Window -> IO (ConnectId w)]
-    , settings :: Settings
+    , events :: [Terminal -> Window -> IO ()]
+    --, events :: (WidgetClass w) => [Terminal -> Window -> IO (ConnectId w)]
+    , settings :: HermiteSettings
     , errorMsg :: Maybe String
 }
 
+defaultHermiteConfig :: HermiteConfig
 defaultHermiteConfig = HermiteConfig {
     name = "xterm-hermite"
     , size = (80,24)
-    , keybindings = defaultKeybindings
-    , events = defaultEvents
+    , keybindings = defaultKeys
+--    , events = defaultEvents
+    , events = []
     , settings = defaultSettings
     , errorMsg = Nothing
 }
@@ -132,10 +131,10 @@ defaultHermiteConfig = HermiteConfig {
 -- these things are the only things hermite keeps track of
 -- other windows, widgets, etc need to kept track manually
 -- by the callback, bindkey and it's own data.
-data Runtime = Runtime {
-    conf :: HermiteConfig
-    vte :: Terminal
-    mainWindow :: Window
---    callbackIds :: [(ConnectId (Either Terminal Window)]
-}
+--data Runtime = Runtime {
+--    conf :: HermiteConfig
+--    , vte :: Terminal
+--    , mainWindow :: Window
+--    , callbackIds :: WidgetClass object => [(ConnectId object)]
+--}
 

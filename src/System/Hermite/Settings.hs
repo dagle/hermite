@@ -5,17 +5,19 @@ module System.Hermite.Settings (
     , loadSettings
     , defaultTheme
     , defaultSettings
-    )
+    ) where 
+
 import Graphics.UI.Gtk.Vte.Vte
 import Graphics.UI.Gtk.Abstract.Widget (Color)
-import System.Termutil.Colors (defaultColors)
+import Graphics.Rendering.Pango.Font
+import System.Termutils.Colors
 
 data HermiteSettings = HermiteSettings {
     bold :: Bool
     , searchWrap :: Bool
     , hideMouse :: Bool
     , wordChars :: String
-    , lines :: Int
+    , scrollbackLines :: Int
     , deletebind :: TerminalEraseBinding
     , theme :: Theme
 }
@@ -32,17 +34,17 @@ data Theme = Theme {
     , cursorShape :: TerminalCursorShape
     , colors :: [Color]
 }
-
+defaultSettings :: HermiteSettings
 defaultSettings = HermiteSettings {
     bold = True
     , searchWrap = True
     , hideMouse = True
     , wordChars = "-A-Za-z0-9,./?%&#:_=+@~"
-    , lines = 100
-    , deletebind = VteEraseAuto
+    , scrollbackLines = 100
+    , deletebind = EraseAuto
     , theme = defaultTheme
 }
-
+defaultTheme :: Theme
 defaultTheme = Theme {
     foreground = "#dcdccc"
     , foregroundBold = "#ffffff"
@@ -51,27 +53,27 @@ defaultTheme = Theme {
     , cursorColor = "#dcdccc"
     , highlight = "#2f2f2f"
     , font = "Monospace 12"
-    , cursorBlink = VteCursorBlinkSystem
-    , cursorShape = VteCursorShapeBlock 
+    , cursorBlink = CursorBlinkSystem
+    , cursorShape = CursorShapeBlock 
     , colors = defaultColors
 }
 
-loadSettings :: HermiteSettings -> IO ()
-loadSettings settings = do
+loadSettings :: HermiteSettings -> Terminal -> IO ()
+loadSettings settings vte = do
     terminalSetAllowBold vte (bold settings)
-    terminalSearchSetWrapAround vte (searchWrap settings)
+    --terminalSearchSetWrapAround vte (searchWrap settings)
     terminalSetWordChars vte (wordChars settings)
-    terminalSetScrollbackLines vte (lines settings)
+    terminalSetScrollbackLines vte (scrollbackLines settings)
     terminalSetDeleteBinding vte (deletebind settings)
     terminalSetMouseAutohide vte (hideMouse settings)
 
-loadTheme :: Theme -> IO ()
-loadTheme htheme = do
-    terminalSetColors vte (foreground htheme) 
-            (background $ htheme) (colors htheme)
-    terminalSetColorBold vte (foregroundBold htheme)
-    terminalSetColorDim vte (foregroundDim htheme)
-    terminalSetColorCursor vte (cursor htheme)
-    terminalSetColorHighlight vte (highlight htheme)
+loadTheme :: Theme -> Terminal -> IO ()
+loadTheme htheme vte = do
+    --terminalSetColors vte (foreground htheme) 
+    --        (background $ htheme) (colors htheme)
+    terminalSetColorBold vte (hexToColor . foregroundBold $ htheme)
+    terminalSetColorDim vte (hexToColor .foregroundDim $ htheme)
+    terminalSetColorCursor vte (hexToColor . cursorColor $ htheme)
+    terminalSetColorHighlight vte (hexToColor . highlight $ htheme)
     font' <- fontDescriptionFromString (font htheme)
     terminalSetFont vte font'

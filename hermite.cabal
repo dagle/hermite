@@ -23,12 +23,13 @@ description:
 
 library
   default-language: Haskell2010
-  build-depends: base > 3 && < 5, xdg-basedir, filepath, utf8-string, vte
+  build-depends: base > 3 && < 5, xdg-basedir, filepath, utf8-string, vte,
+                 gtk, mtl, transformers, dyre, pango, colour, unix
   hs-source-dirs: src
   pkgconfig-depends: gtk+-2.0
   exposed-modules: System.Hermite,
                    System.Hermite.Settings,
-                   System.Termutils.Color
+                   System.Termutils.Colors
   other-modules:
 
   c-sources: 
@@ -40,7 +41,8 @@ library
 executable hermite
   default-language: Haskell2010
   build-depends: base > 3 && < 5, dyre >= 0.8.6, gtk >= 0.12,
-                 xdg-basedir, filepath, vte
+                 xdg-basedir, filepath, vte, unix, mtl, transformers,
+                 colour, pango
   hs-source-dirs: src
   main-is: Main.hs
   pkgconfig-depends: gtk+-2.0
