@@ -33,7 +33,7 @@ import System.Environment.XDG.BaseDir ( getUserConfigFile )
 import System.FilePath ( (</>) )
 import Graphics.UI.Gtk
 import System.Hermite.Settings
-import System.Hermite.Keybind
+import System.Hermite.SimpleKeys
 import System.Posix.Env
 import Graphics.UI.Gtk.Vte.Vte
 
@@ -92,7 +92,7 @@ hermiteMainWithWindow window terminal cfg = do
   setEnv "VTE_VERSION" "3405" True
 
   -- keys are always bound and does not need to be in the eventlist
-  _ <- bindkeys (keybindings cfg) terminal
+  _ <- bindkeys (keybindings cfg) terminal (return ())
   _ <- sequence $ map (\event -> event terminal window) (events cfg)
 
   loadSettings (settings cfg) terminal
@@ -110,7 +110,7 @@ data HermiteConfig = HermiteConfig {
     name :: String
     , size :: (Int, Int) -- Width, Height
     --, pos :: (Int, Int) -- maybe a good thing to have?
-    , keybindings :: [Keybinding]
+    , keybindings :: [SimpleKeys]
     , events :: [Terminal -> Window -> IO ()]
     --, events :: (WidgetClass w) => [Terminal -> Window -> IO (ConnectId w)]
     , settings :: HermiteSettings

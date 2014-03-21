@@ -29,6 +29,7 @@ library
   pkgconfig-depends: gtk+-2.0
   exposed-modules: System.Hermite,
                    System.Hermite.Settings,
+                   System.Hermite.SimpleKeys,
                    System.Termutils.Colors
   other-modules:
 
