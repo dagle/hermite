@@ -10,6 +10,7 @@ module System.Hermite.Tabs (
     --, module Graphics.UI.Gtk.Layout.Notebook
     ) where 
 
+import Control.Monad
 import Graphics.UI.Gtk.Layout.Notebook
 import Graphics.UI.Gtk
 import Graphics.UI.Gtk.Vte.Vte
@@ -20,10 +21,12 @@ castToTerminal = undefined
 
 hermiteTabMain :: HermiteConfig -> IO ()
 hermiteTabMain cfg = do
-  gtkThemes
+--  gtkThemes
   _ <- initGUI
   window <- windowNew
   note <- notebookNew
+  containerAdd window note
+  onDestroy window mainQuit
   uncurry (widgetSetSizeRequest window) $ size cfg
   tabNew note cfg
   widgetShowAll window
@@ -42,7 +45,7 @@ tabNew note cfg = do
     hermiteloadConfig vte cfg
     _ <- on vte childExited $ deleteTab note vte
     _ <- on vte windowTitleChanged $ changeTitleTab note vte
-    _ <- notebookAppendPage (note) vte "Terminal"
+    _ <- notebookAppendPage note vte "Terminal"
     _ <- terminalForkCommand vte Nothing Nothing Nothing Nothing False False False
     return ()
 
@@ -69,6 +72,8 @@ tabDeleteCurrent note =
 
 deleteTab :: (WidgetClass w, NotebookClass self) => self -> w -> IO ()
 deleteTab note vte = do
+    num <- notebookGetNPages note
+    when (num == 1) mainQuit
     i <- notebookPageNum note vte
     case i of
         Nothing -> return ()
