@@ -30,7 +30,8 @@ library
   exposed-modules: System.Hermite,
                    System.Hermite.Settings,
                    System.Hermite.SimpleKeys,
-                   System.Termutils.Colors
+                   System.Termutils.Colors,
+                   System.Hermite.Tabs
   other-modules:
 
   c-sources: 

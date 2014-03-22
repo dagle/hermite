@@ -22,22 +22,18 @@ module System.Hermite (
     -- at startup to create a custom terminal. You import this and it's helper
     -- functions and you are ready to create your own terminal.
     --
-    HermiteConfig(..),
-    defaultHermite,
-    defaultHermiteConfig,
-    hermiteMain
+    HermiteConfig(..)
+    , defaultHermite
+    , defaultHermiteConfig
+    , hermiteMain
     ) where
 
 import qualified Config.Dyre as Dyre
-import System.Environment.XDG.BaseDir ( getUserConfigFile )
-import System.FilePath ( (</>) )
 import Graphics.UI.Gtk
 import System.Hermite.Settings
 import System.Hermite.SimpleKeys
-import System.Posix.Env
 import Graphics.UI.Gtk.Vte.Vte
 
-import Paths_hermite
 
 showError :: HermiteConfig -> String -> HermiteConfig
 showError cfg msg = cfg { errorMsg = Just msg }
@@ -60,62 +56,19 @@ realMain cfg = do
         Nothing -> hermiteMain cfg
         Just err -> error ("Error: " ++ err)
 
-getDefaultConfigFile :: String -> IO FilePath
-getDefaultConfigFile nam = do
-  dataDir <- getDataDir
-  return (dataDir </> nam)
-
-gtkThemes :: IO ()
-gtkThemes = do
-  defaultGtkConfig <- getDefaultConfigFile "hermite.rc"
-  userGtkConfig <- getUserConfigFile "hermite" "hermite.rc"
-  rcSetDefaultFiles [ defaultGtkConfig, userGtkConfig ]
-
 -- Standard hermiteMain for users only needing a standard terminal
 hermiteMain :: HermiteConfig -> IO ()
 hermiteMain cfg = do
-  gtkThemes
+  gtkThemes -- really? 
   _ <- initGUI
   window <- windowNew
   terminal <- terminalNew
-  hermiteMainWithWindow window terminal cfg
-
--- Version of hermite for users that needs to starts some extra widgets
--- that interacts with the window or terminal.
-hermiteMainWithWindow :: Window -> Terminal -> HermiteConfig -> IO ()
-hermiteMainWithWindow window terminal cfg = do
-  _ <- on terminal childExited mainQuit
-
-  --xid <- windowXid(window)
-  --setEnv "WINDOWID" (show xid) True
-  setEnv "TERM" (name cfg) True
-  setEnv "VTE_VERSION" "3405" True
-
-  -- keys are always bound and does not need to be in the eventlist
-  _ <- bindkeys (keybindings cfg) terminal (return ())
-  _ <- sequence $ map (\event -> event terminal window) (events cfg)
-
-  loadSettings (settings cfg) terminal
-  loadTheme (theme $ settings cfg) terminal
-
-  _ <- terminalForkCommand terminal Nothing Nothing Nothing Nothing False False False
   containerAdd window terminal
-
   uncurry (widgetSetSizeRequest window) $ size cfg
+  hermiteloadConfig terminal cfg
   widgetShowAll window
 
   mainGUI
-
-data HermiteConfig = HermiteConfig {
-    name :: String
-    , size :: (Int, Int) -- Width, Height
-    --, pos :: (Int, Int) -- maybe a good thing to have?
-    , keybindings :: [SimpleKeys]
-    , events :: [Terminal -> Window -> IO ()]
-    --, events :: (WidgetClass w) => [Terminal -> Window -> IO (ConnectId w)]
-    , settings :: HermiteSettings
-    , errorMsg :: Maybe String
-}
 
 defaultHermiteConfig :: HermiteConfig
 defaultHermiteConfig = HermiteConfig {
@@ -127,7 +80,6 @@ defaultHermiteConfig = HermiteConfig {
     , settings = defaultSettings
     , errorMsg = Nothing
 }
-
 -- these things are the only things hermite keeps track of
 -- other windows, widgets, etc need to kept track manually
 -- by the callback, bindkey and it's own data.

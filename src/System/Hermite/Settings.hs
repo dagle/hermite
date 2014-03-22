@@ -1,16 +1,25 @@
 module System.Hermite.Settings (
-    Theme(..)
+    HermiteConfig(..)
+    , Theme(..)
     , HermiteSettings(..)
     , loadTheme
     , loadSettings
+    , hermiteloadConfig
     , defaultTheme
     , defaultSettings
+    , gtkThemes
     ) where 
 
+import Graphics.UI.Gtk
 import Graphics.UI.Gtk.Vte.Vte
-import Graphics.UI.Gtk.Abstract.Widget (Color)
-import Graphics.Rendering.Pango.Font
+
 import System.Termutils.Colors
+import System.Hermite.SimpleKeys
+
+import System.Environment.XDG.BaseDir ( getUserConfigFile )
+import System.FilePath ( (</>) )
+import System.Posix.Env
+import Paths_hermite
 
 data HermiteSettings = HermiteSettings {
     bold :: Bool
@@ -34,6 +43,18 @@ data Theme = Theme {
     , cursorShape :: TerminalCursorShape
     , colors :: [Color]
 }
+
+data HermiteConfig = HermiteConfig {
+    name :: String
+    , size :: (Int, Int) -- Width, Height
+    --, pos :: (Int, Int) -- maybe a good thing to have?
+    , keybindings :: [SimpleKeys]
+    , events :: [Terminal -> Window -> IO ()]
+    --, events :: (WidgetClass w) => [Terminal -> Window -> IO (ConnectId w)]
+    , settings :: HermiteSettings
+    , errorMsg :: Maybe String
+}
+
 defaultSettings :: HermiteSettings
 defaultSettings = HermiteSettings {
     bold = True
@@ -77,3 +98,32 @@ loadTheme htheme vte = do
     terminalSetColorHighlight vte (hexToColor . highlight $ htheme)
     font' <- fontDescriptionFromString (font htheme)
     terminalSetFont vte font'
+
+getDefaultConfigFile :: String -> IO FilePath
+getDefaultConfigFile nam = do
+  dataDir <- getDataDir
+  return (dataDir </> nam)
+
+gtkThemes :: IO ()
+gtkThemes = do
+  defaultGtkConfig <- getDefaultConfigFile "hermite.rc"
+  userGtkConfig <- getUserConfigFile "hermite" "hermite.rc"
+  rcSetDefaultFiles [ defaultGtkConfig, userGtkConfig ]
+
+-- takes a vte and loads setting (theme, bindings etc etc) into it. 
+hermiteloadConfig :: Terminal -> HermiteConfig -> IO ()
+hermiteloadConfig terminal cfg = do
+  _ <- on terminal childExited mainQuit
+
+  --xid <- windowXid(window)
+  --setEnv "WINDOWID" (show xid) True
+  setEnv "TERM" (name cfg) True
+  setEnv "VTE_VERSION" "3405" True
+
+  -- keys are always bound and does not need to be in the eventlist
+  _ <- bindkeys (keybindings cfg) terminal (return ())
+
+  loadSettings (settings cfg) terminal
+  loadTheme (theme $ settings cfg) terminal
+  _ <- terminalForkCommand terminal Nothing Nothing Nothing Nothing False False False
+  return ()
