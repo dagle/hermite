@@ -63,6 +63,8 @@ hermiteMain cfg = do
   _ <- initGUI
   window <- windowNew
   terminal <- terminalNew
+  _ <- on terminal childExited mainQuit
+  onDestroy window mainQuit
   containerAdd window terminal
   uncurry (widgetSetSizeRequest window) $ size cfg
   hermiteloadConfig terminal cfg
