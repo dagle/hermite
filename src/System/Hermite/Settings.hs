@@ -19,7 +19,6 @@ import System.Hermite.SimpleKeys
 import System.Environment.XDG.BaseDir ( getUserConfigFile )
 import System.FilePath ( (</>) )
 import System.Posix.Env
-import Paths_hermite
 
 data HermiteSettings = HermiteSettings {
     bold :: Bool
@@ -99,21 +98,14 @@ loadTheme htheme vte = do
     font' <- fontDescriptionFromString (font htheme)
     terminalSetFont vte font'
 
-getDefaultConfigFile :: String -> IO FilePath
-getDefaultConfigFile nam = do
-  dataDir <- getDataDir
-  return (dataDir </> nam)
-
 gtkThemes :: IO ()
 gtkThemes = do
-  defaultGtkConfig <- getDefaultConfigFile "hermite.rc"
   userGtkConfig <- getUserConfigFile "hermite" "hermite.rc"
-  rcSetDefaultFiles [ defaultGtkConfig, userGtkConfig ]
+  rcSetDefaultFiles [userGtkConfig]
 
 -- takes a vte and loads setting (theme, bindings etc etc) into it. 
 hermiteloadConfig :: Terminal -> HermiteConfig -> IO ()
 hermiteloadConfig terminal cfg = do
-  _ <- on terminal childExited mainQuit
 
   --xid <- windowXid(window)
   --setEnv "WINDOWID" (show xid) True
