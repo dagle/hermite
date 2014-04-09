@@ -1,3 +1,4 @@
+{-# LANGUAGE RankNTypes, FlexibleInstances #-}
 module System.Hermite.Settings (
     HermiteConfig(..)
     , Theme(..)
@@ -8,18 +9,25 @@ module System.Hermite.Settings (
     , defaultTheme
     , defaultSettings
     , gtkThemes
+    , defaultHermiteConfig
+    , defaultEnv
+    , setEnvs
+    , loadbindings
     ) where 
 
 import Graphics.UI.Gtk
 import Graphics.UI.Gtk.Vte.Vte
+import Data.Default
 
 import System.Termutils.Colors
-import System.Hermite.SimpleKeys
+import System.Termutils.Xid
+import System.Hermite.Keys
 
 import System.Environment.XDG.BaseDir ( getUserConfigFile )
-import System.FilePath ( (</>) )
 import System.Posix.Env
 
+-- everything with colors doesn't work at all in this module
+-- Something goes wrong when interacting with the ffi
 data HermiteSettings = HermiteSettings {
     bold :: Bool
     , searchWrap :: Bool
@@ -43,13 +51,13 @@ data Theme = Theme {
     , colors :: [Color]
 }
 
-data HermiteConfig = HermiteConfig {
+data HermiteConfig w = HermiteConfig {
     name :: String
     , size :: (Int, Int) -- Width, Height
     --, pos :: (Int, Int) -- maybe a good thing to have?
-    , keybindings :: [SimpleKeys]
-    , events :: [Terminal -> Window -> IO ()]
-    --, events :: (WidgetClass w) => [Terminal -> Window -> IO (ConnectId w)]
+    , startupHook :: [w -> (HermiteConfig w) -> IO()]
+    , terminalHook :: [w -> (HermiteConfig w) -> IO()]
+    , events :: [w -> IO ()]
     , settings :: HermiteSettings
     , errorMsg :: Maybe String
 }
@@ -69,53 +77,83 @@ defaultTheme = Theme {
     foreground = "#dcdccc"
     , foregroundBold = "#ffffff"
     , foregroundDim = "#888888"
-    , background = "#3f3f3f"
-    , cursorColor = "#dcdccc"
+    , background = "#ffffffffffff"
+    , cursorColor = "#ffffffffffff"
     , highlight = "#2f2f2f"
-    , font = "Monospace 12"
+    , font = "terminus 10"
     , cursorBlink = CursorBlinkSystem
     , cursorShape = CursorShapeBlock 
     , colors = defaultColors
 }
 
-loadSettings :: HermiteSettings -> Terminal -> IO ()
-loadSettings settings vte = do
-    terminalSetAllowBold vte (bold settings)
-    --terminalSearchSetWrapAround vte (searchWrap settings)
-    terminalSetWordChars vte (wordChars settings)
-    terminalSetScrollbackLines vte (scrollbackLines settings)
-    terminalSetDeleteBinding vte (deletebind settings)
-    terminalSetMouseAutohide vte (hideMouse settings)
+loadSettings :: Terminal -> HermiteConfig w -> IO ()
+loadSettings terminal cfg' = do
+    let cfg = settings cfg'
+    terminalSetAllowBold terminal (bold cfg)
+    terminalSearchSetWrapAround terminal (searchWrap cfg)
+    terminalSetWordChars terminal (wordChars cfg)
+    terminalSetScrollbackLines terminal (scrollbackLines cfg)
+    terminalSetDeleteBinding terminal (deletebind cfg)
+    terminalSetMouseAutohide terminal (hideMouse cfg)
 
-loadTheme :: Theme -> Terminal -> IO ()
-loadTheme htheme vte = do
-    --terminalSetColors vte (foreground htheme) 
-    --        (background $ htheme) (colors htheme)
-    terminalSetColorBold vte (hexToColor . foregroundBold $ htheme)
-    terminalSetColorDim vte (hexToColor .foregroundDim $ htheme)
-    terminalSetColorCursor vte (hexToColor . cursorColor $ htheme)
-    terminalSetColorHighlight vte (hexToColor . highlight $ htheme)
-    font' <- fontDescriptionFromString (font htheme)
-    terminalSetFont vte font'
+loadTheme :: Terminal -> HermiteConfig w -> IO ()
+loadTheme terminal cfg' = do
+    let cfg = theme $ settings cfg'
+    --terminalSetColors vte (hexToColor . foreground $ htheme) 
+    --        (hexToColor . background $ htheme) (colors htheme)
+    terminalSetColorBold terminal (hexToColor . foregroundBold $ cfg)
+    terminalSetColorDim terminal (hexToColor .foregroundDim $ cfg)
+    --terminalSetColorCursor vte (hexToColor . cursorColor $ htheme)
+    terminalSetColorHighlight terminal (hexToColor . highlight $ cfg)
+    font' <- fontDescriptionFromString (font cfg)
+    terminalSetFont terminal font'
+    return ()
 
-gtkThemes :: IO ()
-gtkThemes = do
+static :: a -> b -> b1 -> a
+static = const . const
+
+gtkThemes :: w -> c -> IO ()
+gtkThemes = static $ do
   userGtkConfig <- getUserConfigFile "hermite" "hermite.rc"
   rcSetDefaultFiles [userGtkConfig]
 
--- takes a vte and loads setting (theme, bindings etc etc) into it. 
-hermiteloadConfig :: Terminal -> HermiteConfig -> IO ()
-hermiteloadConfig terminal cfg = do
 
-  --xid <- windowXid(window)
-  --setEnv "WINDOWID" (show xid) True
-  setEnv "TERM" (name cfg) True
-  setEnv "VTE_VERSION" "3405" True
+defaultEnv :: Window -> c -> [([Char], IO String, Bool)]
+defaultEnv w _ = [
+    ("WINDOWID", getXid w >>= return . show, True)
+    ,("TERM", return $ "xterm-hermite", True)
+    ,("VTE_VERSION", return $ "3405", True)
+    ]
 
-  -- keys are always bound and does not need to be in the eventlist
-  _ <- bindkeys (keybindings cfg) terminal (return ())
 
-  loadSettings (settings cfg) terminal
-  loadTheme (theme $ settings cfg) terminal
-  _ <- terminalForkCommand terminal Nothing Nothing Nothing Nothing False False False
-  return ()
+setEnvs :: (t -> t1 -> [(String, IO String, Bool)]) -> t -> t1 -> IO ()
+setEnvs envs w c = do
+    mapM_ (env) $ envs w c
+    where env (n,v,b) = do
+            v' <- v
+            setEnv n v' b
+
+loadbindings :: (HermiteState s, Keybinding a b, Default b) => 
+    (w -> (s b) -> [a]) -> w -> Terminal -> IO ()
+loadbindings keys w terminal = do
+    s <- stateNew def
+    _ <- bindkeys (keys w s) terminal s
+    return ()
+    --bindmouse (mouse w s) terminal s
+
+
+--hermiteloadConfig :: (HermiteState s, Keybinding a b) => w -> Terminal -> HermiteConfig w (s b) a -> IO ()
+hermiteloadConfig :: w -> HermiteConfig w -> IO ()
+hermiteloadConfig w cfg = do
+    mapM_ (\f -> f w cfg) (terminalHook cfg)
+
+defaultHermiteConfig :: HermiteConfig (Window, Terminal)
+defaultHermiteConfig = HermiteConfig {
+    name = "xterm-hermite"
+    , size = (80,24)
+    , startupHook = []
+    , terminalHook = []
+    , events = []
+    , settings = defaultSettings
+    , errorMsg = Nothing
+}

@@ -31,57 +31,46 @@ module System.Hermite (
 import qualified Config.Dyre as Dyre
 import Graphics.UI.Gtk
 import System.Hermite.Settings
-import System.Hermite.SimpleKeys
-import Graphics.UI.Gtk.Vte.Vte
+--import Graphics.UI.Gtk.Vte.Vte
 
 
-showError :: HermiteConfig -> String -> HermiteConfig
+showError :: HermiteConfig w -> String -> HermiteConfig w
 showError cfg msg = cfg { errorMsg = Just msg }
 
 -- | The default parameters need to tell GHC to compile using
 -- -threaded so that the GTK event loops doesn't block all of the
 -- widgets
-defaultParams :: Dyre.Params HermiteConfig
+defaultParams :: Dyre.Params (HermiteConfig w)
 defaultParams = Dyre.defaultParams { Dyre.projectName = "hermite"
                                    , Dyre.realMain = realMain
                                    , Dyre.showError = showError
                                    , Dyre.ghcOpts = ["-threaded"]
                                    }
-defaultHermite :: HermiteConfig -> IO ()
+defaultHermite :: HermiteConfig w -> IO ()
 defaultHermite = Dyre.wrapMain defaultParams
 
-realMain :: HermiteConfig -> IO ()
+realMain :: HermiteConfig w -> IO ()
 realMain cfg = do
     case errorMsg cfg of
         Nothing -> hermiteMain cfg
         Just err -> error ("Error: " ++ err)
 
 -- Standard hermiteMain for users only needing a standard terminal
-hermiteMain :: HermiteConfig -> IO ()
+hermiteMain :: HermiteConfig w -> IO ()
 hermiteMain cfg = do
-  gtkThemes -- really? 
+  gtkThemes () () -- really? 
   _ <- initGUI
+{-
   window <- windowNew
   terminal <- terminalNew
   _ <- on terminal childExited mainQuit
-  onDestroy window mainQuit
-  containerAdd window terminal
-  uncurry (widgetSetSizeRequest window) $ size cfg
-  hermiteloadConfig terminal cfg
-  widgetShowAll window
+  _ <- onDestroy window mainQuit
+  containerAdd window terminal -}
+--  _ <- uncurry (widgetSetSizeRequest window) $ size cfg
+--  widgetModifyBg terminal StateNormal $ hexToColor $ background $ theme $ settings cfg
+--  widgetShowAll window
 
   mainGUI
-
-defaultHermiteConfig :: HermiteConfig
-defaultHermiteConfig = HermiteConfig {
-    name = "xterm-hermite"
-    , size = (80,24)
-    , keybindings = defaultKeys
---    , events = defaultEvents
-    , events = []
-    , settings = defaultSettings
-    , errorMsg = Nothing
-}
 -- these things are the only things hermite keeps track of
 -- other windows, widgets, etc need to kept track manually
 -- by the callback, bindkey and it's own data.
@@ -90,5 +79,3 @@ defaultHermiteConfig = HermiteConfig {
 --    , vte :: Terminal
 --    , mainWindow :: Window
 --    , callbackIds :: WidgetClass object => [(ConnectId object)]
---}
-
