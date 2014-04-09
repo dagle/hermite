@@ -7,17 +7,15 @@ module System.Termutils.Colors (
     ) where 
 
 import Control.Monad.State
-import Data.Colour
+import Data.Char
 import Data.Word
-import Data.Colour.SRGB
-import Data.Colour.SRGB.Linear
-import Graphics.UI.Gtk.Abstract.Widget
-import Graphics.UI.Gtk.Gdk.GC
 import Data.Bits
+import Graphics.UI.Gtk hiding (get, set)
+
 
 -- Run a color configuration in a state monad
-runColors :: State [Color] () -> [Color] -> [Color]
-runColors = execState
+runColors :: [Color] -> State [Color] () -> [Color]
+runColors = flip execState
 
 -- set a value value at pos i in a list
 set :: Int -> a -> [a] -> [a]
@@ -29,55 +27,53 @@ set i v l =
 setColor :: Int -> String -> State [Color] ()
 setColor i hex = do
     vec <- get
-    let vec' = set i (hexToColor hex) vec
-    put vec'
-
-toColor :: (Floating b, RealFrac b) => Colour b -> Color
-toColor s = 
-    let (RGB r g b) = toSRGBBounded s :: RGB Word16
-        in (Color r g b)
+    put $ set i (hexToColor hex) vec
 
 hexToColor :: String -> Color
-hexToColor str = 
-    let colour = sRGB24read str
-        in toColor colour
+hexToColor ('#':a:b:c:d:e:g:_)  = Color (f a b) (f c d) (f e g)
+    where f x y = fromIntegral $ (digitToInt x * 0x10 + digitToInt y) * 0x100
+hexToColor ('#':a:b:c:_)    = Color (f a) (f b) (f c)
+    where f x = fromIntegral $ digitToInt x * 0x1000
+hexToColor _            = Color 0 0 0
 
-color16 :: Int -> Int -> Double
+color16 :: Int -> Int -> Word16
 color16 i x = 
-    let hi = if (i .&. x) == 0 then 49152.0 else 0.0
-        lo = if i > 7 then 16383.0 else 0.0
-        in (hi + lo) / 65535.0
+    let hi = if (i .&. x) == 0 then 49152 else 0
+        lo = if i > 7 then 16383 else 0
+        in (hi + lo)
 
-color232 :: Int -> Double
+color232 :: Int -> Word16
 color232 c =
     part $ if c == 0 then 0 else c * 40 + 55
 
-part :: Int -> Double 
-part col = fromIntegral (col .|. shift col 8) / 65535.0
+part :: Int -> Word16
+part col = fromIntegral (col .|. shift col 8) 
 
 -- get the defaultColor, only defined values between 0 and 255
+--
 defaultColor :: Int -> Color
 defaultColor i
     | i >= 0 && i < 16 = 
         let blue = color16 i 4
             green = color16 i 2
             red = color16 i 1
-            in toColor $ rgb red green blue
+            in Color red green blue
     | i >= 0 && i < 232 =
-        let i = i - 16
-            r = div i 36
-            g = (div i 6) `mod` 6 
-            b = mod i 6
+        let j = j - 16
+            r = div j 36
+            g = (div j 6) `mod` 6 
+            b = mod j 6
             red = color232 r
             green = color232 g
             blue = color232 b
-            in toColor $ rgb red green blue
+            in Color red green blue
     | i >= 0 && i < 256 =
         let shade = 8 + (i - 232) * 10
             red = part shade
             green = red
             blue = red
-            in toColor $ rgb red green blue
+            in Color red green blue
+    | True = Color 0 0 0
 
 defaultColors :: [Color]
 defaultColors = map defaultColor [0..255]
