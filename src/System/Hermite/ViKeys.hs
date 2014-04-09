@@ -1,18 +1,26 @@
+{-# LANGUAGE MultiParamTypeClasses #-}
 module System.Hermite.ViKeys (
     ViMode(..)
     , ViKeyData(..)
     , ViKeys(..)
+    , viZero
     , enterCommandMode
     , exitCommandMode
-    )
+    ) where
+
+import Control.Monad
+import Graphics.UI.Gtk.Gdk.EventM
+import Graphics.UI.Gtk.Vte.Vte
+import System.Hermite.Keys
 
 -- Normal is actually insert mode since insert is more common
-data ViMode = ViCmd | ViNormal | ViSelect | ViAll
+data ViMode = ViCmd | ViNormal | ViSelect | ViAll | ViVisual | ViVisualBlock | ViVisualLine
 
+-- Shouldn't we save the selected section independant of vimode?
 data ViKeyData = ViKeyData {
     mode :: ViMode
-    , column :: Int
-    , row :: Int
+    , beginColumn :: Int
+    , beginRow :: Int
     , endColumn :: Int
     , endRow :: Int
 }
@@ -39,45 +47,53 @@ instance Eq ViKeys where
 instance Runnable ViKeys where 
     run = action
 
-instance Keybinding ViKeys b where
-    fromSimpleKeys (SimpleKeys m k a)  = ViKeys ViNormal m k a
-    match vi (ViKeys mode modi k' a) m k = 
-        | (mode vi) != mode = False
-        | k == k' && modi == m = True 
-        | _ = False
+instance Keybinding ViKeys ViKeyData where
+    match vi m k (ViKeys vimode modi k' _) = 
+        ((mode vi) == vimode) && k == k' && modi == m
 
--- should figure out a better way to pass around arguments
--- without makeing them less generic or strings or horrible to use
--- (aka pain in the but)
-updateSelection vte vi = do
+instance Default ViKeyData
+    def = ViKeyData ViNormal 0 0 0 0
+
+-- this funcion is ran when we enter commandmode and/or change between
+-- other modes. It's a convient function that saves the current position so
+-- when we change back mode we can get the old position.
+updateSelection :: HermiteState s => s ViKeyData -> Terminal -> IO ()
+updateSelection vi vte = do
+    mode' <- stateGet vi
     terminalSelectNone vte
-    when (mode vi == ViCmd) $ do
-        let nCol = terminalGetColumnCount vte
-            (col, row) = terminalGetCursorPosition vte
-        terminalSetSelectionBlockMode vte $ mode vi == ViVisual
-        when (mode vi == ViVisual) $ do
-            let begin =
-                end =
+    when (mode mode' == ViCmd) $ do
+        nCol <- terminalGetColumnCount vte
+        (col, row) <- terminalGetCursorPosition vte
+        terminalSetSelectionBlockMode vte $ mode mode' == ViVisualBlock
+        when (mode mode' == ViVisual) $ do
+            let begin = beginRow mode' * nCol + beginColumn mode'
+                end = row * nCol + col
             if (begin < end )
-                then terminalSelectText vte 
-                else terminalSelectText vte 
-        when (mode vi == ViVisualLine) $ do
-            terminalSelectText vte 
-        when (mode vi == ViVisualBlock) $ do
-            terminalSelectText vte 
+                then terminalSelectText vte (beginColumn mode') (beginRow mode') col row
+                else terminalSelectText vte col row (beginColumn mode') (beginRow mode') 
+        when (mode mode' == ViVisualLine) $ do
+            terminalSelectText vte 0 (min (beginRow mode') row) (nCol - 1) (max (beginRow mode') row)
+        when (mode mode' == ViVisualBlock) $ do
+            terminalSelectText vte (min (beginColumn mode') col)
+                                   (min (beginRow mode') row) 
+                                   (max (beginColumn mode') col) 
+                                   (max (beginRow mode') row)
     terminalCopyPrimary vte
 
-enterCommandMode :: 
+-- saves the current position and enters commandmode.
+enterCommandMode :: HermiteState s => s ViKeyData -> Terminal -> IO ()
 enterCommandMode vi vte = do
-    terminalDisconnecPtyRead vte
-    (col, row') <- terminalGetCursorPosition vte
-    updateSelection vte vi
-    put vi $ mode { mode = ViCmd, column = col, row = row'} 
+    mode' <- stateGet vi
+    terminalDisconnectPtyRead vte
+    (col, row) <- terminalGetCursorPosition vte
+    stateWrite vi $ mode' { mode = ViCmd, beginColumn = col, beginRow = row} 
+    updateSelection vi vte
 
-exitCommandMode ::
+-- leaves commandmode and returns the old position
+exitCommandMode:: HermiteState s => s ViKeyData -> Terminal -> IO ()
 exitCommandMode vi vte = do
-    mode <- vi
-    terminalSetCursorPosition vte (column mode) (row mode)
+    mode' <- stateGet vi
+    terminalSetCursorPosition vte (beginColumn mode') (beginRow mode')
     terminalConnectPtyRead vte
     terminalSelectNone vte
-    put vi $ mode { mode = ViNormal }
+    stateWrite vi $ mode' { mode = ViNormal }

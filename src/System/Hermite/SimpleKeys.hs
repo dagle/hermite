@@ -1,8 +1,11 @@
-{-# LANGUAGE MultiParamTypeClasses, FlexibleContexts #-}
+{-# LANGUAGE MultiParamTypeClasses, FlexibleContexts, ConstraintKinds #-}
+{- 
+ - A set of simple bindings, no modes, no cords, just a modifier and a key.
+ -}
 module System.Hermite.SimpleKeys (
     Keybinding(..)
     , Runnable(..)
-    , SimpleKeys(..)
+    , SimpleKeysT(..)
     , runKeys
     , swap
     , setKey
@@ -12,71 +15,35 @@ module System.Hermite.SimpleKeys (
     , keyPressed
     ) where 
 
-import Control.Monad.IO.Class
-import Control.Monad.State
 import Graphics.UI.Gtk.Gdk.EventM
+import Graphics.UI.Gtk.Vte.Vte
 import Graphics.UI.Gtk hiding (get)
+import System.Hermite.Keys
 
-class (Eq a, Runnable a) => Keybinding a b where
-   fromSimpleKeys :: SimpleKeys -> a
-   match :: b -> [Modifier] -> String -> a -> Bool
-
-class Runnable a where
-    run :: a -> IO ()
-
-data SimpleKeys = SimpleKeys {
+data SimpleKeysT = SimpleKeys {
     modifier :: [Modifier]
     , key :: String
     , action :: IO ()
 }
 
-instance Keybinding SimpleKeys () where
-    fromSimpleKeys = id
+instance Keybinding SimpleKeysT () where
     match _ modi k (SimpleKeys modi' k' _) =
         (modi == modi') && (k == k')
 
-instance Runnable SimpleKeys where
+instance Runnable SimpleKeysT where
     run = action
 
-instance Eq SimpleKeys where
+instance Eq SimpleKeysT where
     (SimpleKeys m1 k1 _) == (SimpleKeys m2 k2 _) = 
                 (m1 == m2) && (k1 == k2)
 
--- Run a color configuration in a state monad
-runKeys :: (Keybinding a b) => [a] -> State [a] () -> [a]
-runKeys = flip execState
-
-swap :: Eq a => a -> a -> a
-swap k1 k2 = if k1 == k2 then k2 else k1
-
-setKey :: (Eq a, MonadState [a] m) => (a -> a -> a) -> a -> m ()
-setKey f key' = do
-    vec <- get
-    let matched = filter ((==) $ key') vec
-    case matched of 
-        [] -> put $ key' : vec
-        _  -> put $ map (f key') vec
-
-
-bindkeys :: (WidgetClass object, Keybinding a b) =>
-            [a] -> object -> IO b -> IO (ConnectId object)
-bindkeys bindings vte b = on vte keyPressEvent $ keyPressed b bindings
-
-toKeybind :: ([Modifier], String, IO ()) -> SimpleKeys
+-- Convient functions that lets you write bindings without
+-- typing constructors.
+toKeybind :: ([Modifier], String, IO ()) -> SimpleKeysT
 toKeybind (m, k, a) = SimpleKeys m k a
 
-defaultKeys :: [SimpleKeys]
-defaultKeys = map toKeybind [
-    ([Control],  "p",  return ())
+-- Default bindings for a simple terminal
+defaultKeys :: (Keybinding SimpleKeysT ()) => (Window, Terminal) -> IO () -> [SimpleKeysT]
+defaultKeys (w, t) _ = map toKeybind [
+    ([Control],  "x", return ())
     ]
-
--- runs the first action found 
-keyPressed :: (Keybinding a b) => IO b -> [a] -> EventM EKey Bool
-keyPressed b bindings = do
-    m <- eventModifier
-    key' <- eventKeyName
-    b' <- liftIO b
-    let matched = filter (match b' m key') bindings
-    case matched of
-        [] -> return False
-        (a:_) -> liftIO (run a) >> return True
