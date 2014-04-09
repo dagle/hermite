@@ -6,7 +6,8 @@ module System.Hermite.Tabs (
     , deleteTab
     , tabDeleteCurrent
     , tmap
-    , hermiteTabMain
+    , hermiteTabNew
+    , configTab
     --, module Graphics.UI.Gtk.Layout.Notebook
     ) where 
 
@@ -19,34 +20,34 @@ import System.Hermite.Settings
 castToTerminal :: (WidgetClass o) => o -> Terminal 
 castToTerminal = undefined
 
-hermiteTabMain :: HermiteConfig -> IO ()
-hermiteTabMain cfg = do
---  gtkThemes
-  _ <- initGUI
-  window <- windowNew
-  note <- notebookNew
-  containerAdd window note
-  onDestroy window mainQuit
-  uncurry (widgetSetSizeRequest window) $ size cfg
-  tabNew note cfg
-  widgetShowAll window
+hermiteTabNew :: IO (Window, Notebook)
+hermiteTabNew = do
+    window <- windowNew
+    note <- notebookNew
+    return (window, note)
 
-  mainGUI
+configTab :: (Window, Notebook) -> HermiteConfig (Window, Notebook) -> IO ()
+configTab w@(window, note) cfg = do
+    containerAdd window note
+    _ <- onDestroy window mainQuit
+    uncurry (widgetSetSizeRequest window) $ size cfg
+    tabNew w note cfg
+    widgetShowAll window
 
--- lazy mans functor
 tmap :: NotebookClass self => (Terminal -> IO b) -> self -> IO [b]
 tmap f note = do
     n <- notebookGetNPages note 
     mapM (\i -> liftTermIndex f i note) [0..n]
 
-tabNew :: NotebookClass self => self -> HermiteConfig -> IO ()
-tabNew note cfg = do
+tabNew :: w -> Notebook -> HermiteConfig w -> IO ()
+tabNew w note cfg = do
     vte <- terminalNew
-    hermiteloadConfig vte cfg
+    hermiteloadConfig w cfg
     _ <- on vte childExited $ deleteTab note vte
     _ <- on vte windowTitleChanged $ changeTitleTab note vte
     _ <- notebookAppendPage note vte "Terminal"
     _ <- terminalForkCommand vte Nothing Nothing Nothing Nothing False False False
+    widgetGrabFocus vte
     return ()
 
 -- unsafe, should have a default case
@@ -55,8 +56,11 @@ liftTermIndex :: NotebookClass self => (Terminal -> IO b)
 liftTermIndex f i note = do 
     w <- notebookGetNthPage note i
     case w of
-        (Just w) -> f (castToTerminal w)
-        --Nothing -> 
+        (Just w') -> f (castToTerminal w')
+        Nothing -> do
+                Just w' <- notebookGetNthPage note 0
+                f (castToTerminal w')
+
 liftTerm :: NotebookClass self => (Terminal -> IO b) -> self -> IO b
 liftTerm f note = do
     i <- notebookGetCurrentPage note
